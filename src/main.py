@@ -24,6 +24,7 @@ def main() -> int:
         )
 
     app = QApplication(sys.argv)
+    app.setStyle("Fusion")
     app.setApplicationName(f"{paths.APP_NAME} Installer")
     app.setDesktopFileName(f"{paths.DESKTOP_ID}.Installer")
 
