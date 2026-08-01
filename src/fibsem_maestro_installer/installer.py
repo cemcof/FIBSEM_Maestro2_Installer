@@ -207,15 +207,19 @@ def install(
             offline=False,
             description="Installing Python",
         )
-        interpreter = plan.python_version
+        interpreter = run_uv(
+            uv,
+            ["python", "find", plan.python_version],
+            root,
+            offline=False,
+            description="Locating the installed Python",
+        ).strip()
 
     check_cancelled(cancel)
     report("Creating the application environment", 32)
     venv = paths.venv_dir(root)
     shutil.rmtree(venv, ignore_errors=True)
     venv_arguments = ["venv", "--relocatable", "--python", interpreter, str(venv)]
-    if not plan.offline:
-        venv_arguments.insert(1, "--managed-python")
     run_uv(
         uv,
         venv_arguments,
@@ -225,7 +229,7 @@ def install(
     )
 
     check_cancelled(cancel)
-    report("Installing FIBSEM Maestro", 45)
+    report("Preparing FIBSEM Maestro", 45)
     if plan.offline:
         if plan.bundle is None:
             raise InstallError("Offline installation requires a bundle directory.")
