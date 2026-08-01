@@ -10,16 +10,19 @@ import platform
 import shutil
 import subprocess
 import tarfile
-import threading
 import zipfile
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 from fibsem_maestro_installer import paths
 from fibsem_maestro_installer.download import download_file, sha256
 from fibsem_maestro_installer.errors import InstallError
 from fibsem_maestro_installer.progress import ProgressReporter, check_cancelled
 
-UV_VERSION = "0.12.0"
+if TYPE_CHECKING:
+    import threading
+    from pathlib import Path
+
+UV_VERSION = "0.12.1"
 UV_RELEASE_URL = "https://github.com/astral-sh/uv/releases/download"
 
 

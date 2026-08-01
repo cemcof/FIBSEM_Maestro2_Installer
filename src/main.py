@@ -9,10 +9,10 @@ import ctypes
 import os
 import sys
 
-from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import QApplication
 
-from fibsem_maestro_installer import paths, resources
+from fibsem_maestro_installer import icons, paths, resources
+from fibsem_maestro_installer.gui.wizard import InstallerWizard
 
 DEFAULT_REPOSITORY = "Ladme/FIBSEM_Maestro"
 
@@ -23,21 +23,15 @@ def main() -> int:
             "CEMCOF.FibsemMaestro.Installer"
         )
 
-    from fibsem_maestro_installer.gui.wizard import InstallerWizard
-
     app = QApplication(sys.argv)
-    app.setApplicationName(f"{paths.APP_NAME} setup")
+    app.setApplicationName(f"{paths.APP_NAME} Installer")
     app.setDesktopFileName(f"{paths.DESKTOP_ID}.Installer")
 
-    assets = resources.asset_dir()
-    icon = assets / "app.ico"
-    if icon.is_file():
-        app.setWindowIcon(QIcon(str(icon)))
+    app.setWindowIcon(icons.load_window_icon(resources.icon_svg()))
 
     wizard = InstallerWizard(
         repository=os.environ.get("FIBSEM_MAESTRO_REPO", DEFAULT_REPOSITORY),
-        assets=assets,
-        bundle=resources.find_offline_bundle(),
+        bundle=paths.find_offline_bundle(),
         token=os.environ.get("GITHUB_TOKEN") or None,
     )
     wizard.show()

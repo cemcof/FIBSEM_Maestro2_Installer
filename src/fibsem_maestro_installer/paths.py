@@ -195,3 +195,40 @@ def icon_theme_dir() -> Path:
     base = os.environ.get("XDG_DATA_HOME")
     root = Path(base) if base else Path.home() / ".local" / "share"
     return root / "icons" / "hicolor"
+
+
+def is_frozen() -> bool:
+    """
+    Report whether the installer is running as a frozen executable.
+
+    Returns:
+        True when running under PyInstaller.
+    """
+    return getattr(sys, "frozen", False)
+
+
+def executable_dir() -> Path:
+    """
+    Return the directory containing the wizard executable.
+
+    Returns:
+        Directory of the running executable, or the project root when the
+        installer is run from a source checkout.
+    """
+    if is_frozen():
+        return Path(sys.executable).resolve().parent
+    return Path(__file__).resolve().parents[2]
+
+
+def find_offline_bundle() -> Path | None:
+    """
+    Locate an offline bundle shipped next to the wizard.
+
+    Returns:
+        Path of a directory named `bundle` containing a `wheels`
+        subdirectory, or None when no usable bundle is present.
+    """
+    candidate = executable_dir() / "bundle"
+    if (candidate / "wheels").is_dir():
+        return candidate
+    return None

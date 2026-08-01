@@ -6,10 +6,13 @@
 from __future__ import annotations
 
 import subprocess
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 from fibsem_maestro_installer import paths
 from fibsem_maestro_installer.errors import AutoscriptError
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 CLIENT_PACKAGE = "autoscript_sdb_microscope_client"
 

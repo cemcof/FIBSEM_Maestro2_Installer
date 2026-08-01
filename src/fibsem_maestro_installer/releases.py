@@ -5,14 +5,19 @@
 
 from __future__ import annotations
 
-import re
-import threading
 from dataclasses import dataclass
-from pathlib import Path
+from typing import TYPE_CHECKING
+
+from packaging.version import InvalidVersion, Version
 
 from fibsem_maestro_installer.download import download_file, fetch_json
 from fibsem_maestro_installer.errors import InstallError
-from fibsem_maestro_installer.progress import ProgressReporter
+
+if TYPE_CHECKING:
+    import threading
+    from pathlib import Path
+
+    from fibsem_maestro_installer.progress import ProgressReporter
 
 GITHUB_API = "https://api.github.com"
 
@@ -33,23 +38,22 @@ class Release:
     wheel_url: str
 
 
-def parse_version(text: str) -> tuple[int, ...]:
+def parse_version(text: str) -> Version | None:
     """
-    Convert a version string into a comparable tuple.
-
-    Only the numeric release segment is considered, which is sufficient for
-    deciding whether an update is available.
+    Convert a version string into a comparable PEP 440 version.
 
     Args:
-        text: Version string such as `"v1.4.0"` or `"1.4.0rc1"`.
+        text: Version string such as `"v1.4.0"` or `"1.4.0b2"`.
 
     Returns:
-        Tuple of integers, empty when no numbers are present.
+        Parsed Version object or None if the version string cannot be parsed.
     """
-    match = re.match(r"v?(\d+(?:\.\d+)*)", text.strip())
-    if match is None:
-        return ()
-    return tuple(int(part) for part in match.group(1).split("."))
+    normalized = text.strip().lstrip("v")
+
+    try:
+        return Version(normalized)
+    except InvalidVersion:
+        return None
 
 
 def is_newer(candidate: str, installed: str) -> bool:
@@ -62,8 +66,14 @@ def is_newer(candidate: str, installed: str) -> bool:
 
     Returns:
         True if the candidate is strictly newer.
+        If any of the versions is invalid, the other is always considered to be newer.
     """
-    return parse_version(candidate) > parse_version(installed)
+    candidate_v = parse_version(candidate)
+    installed_v = parse_version(installed)
+
+    return installed_v is None or (
+        candidate_v is not None and candidate_v > installed_v
+    )
 
 
 def latest_release(repository: str, token: str | None = None) -> Release:

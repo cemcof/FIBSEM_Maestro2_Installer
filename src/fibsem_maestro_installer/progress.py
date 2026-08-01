@@ -5,10 +5,12 @@
 
 from __future__ import annotations
 
-import threading
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
 from fibsem_maestro_installer.errors import InstallCancelled
+
+if TYPE_CHECKING:
+    import threading
 
 
 class ProgressReporter(Protocol):

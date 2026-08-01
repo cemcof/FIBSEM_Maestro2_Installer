@@ -8,16 +8,19 @@ from __future__ import annotations
 import re
 import shutil
 import subprocess
-from pathlib import Path
+from typing import TYPE_CHECKING
 
-from fibsem_maestro_installer import paths
+from fibsem_maestro_installer import icons, paths, resources
 from fibsem_maestro_installer.errors import InstallError
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 ICON_SIZES: tuple[int, ...] = (16, 24, 32, 48, 64, 128, 256, 512)
 
 _DESKTOP_ENTRY = """[Desktop Entry]
 Type=Application
-Version=2.0.0
+Version=2.0
 Name={name}
 Comment=Control software for FIB SEM microscopes
 Exec={executable}
@@ -28,13 +31,12 @@ StartupWMClass={wm_class}
 """
 
 
-def create_launchers(root: Path, assets: Path) -> list[Path]:
+def create_launchers(root: Path) -> list[Path]:
     """
     Create the launchers appropriate to the current platform.
 
     Args:
         root: Installation root.
-        assets: Directory containing the bundled icon files.
 
     Returns:
         Every path created, for recording in the manifest.
@@ -43,8 +45,9 @@ def create_launchers(root: Path, assets: Path) -> list[Path]:
         InstallError: If a launcher cannot be created.
     """
     if paths.is_windows():
-        return _create_windows_launchers(root, assets)
-    return _create_linux_launchers(root, assets)
+        return _create_windows_launchers(root)
+
+    return _create_linux_launchers(root)
 
 
 def remove_launchers(recorded: list[Path]) -> None:
@@ -67,13 +70,12 @@ def remove_launchers(recorded: list[Path]) -> None:
         _refresh_linux_caches()
 
 
-def _create_windows_launchers(root: Path, assets: Path) -> list[Path]:
+def _create_windows_launchers(root: Path) -> list[Path]:
     """
-    Create a Start Menu shortcut.
+    Render the ICO and create a Start Menu shortcut.
 
     Args:
         root: Installation root.
-        assets: Directory containing `favicon.ico`.
 
     Returns:
         Paths created.
@@ -81,17 +83,14 @@ def _create_windows_launchers(root: Path, assets: Path) -> list[Path]:
     Raises:
         InstallError: If the COM call fails.
     """
-    icon = root / "favicon.ico"
-    source_icon = assets / "favicon.ico"
-    if source_icon.is_file():
-        shutil.copy2(source_icon, icon)
+    icon = icons.build_ico(resources.icon_svg(), root / "app.ico")
 
     link = paths.start_menu_dir() / f"{paths.APP_NAME}.lnk"
     link.parent.mkdir(parents=True, exist_ok=True)
     target = paths.app_executable(root)
 
     try:
-        from win32com.client import Dispatch
+        from win32com.client import Dispatch  # type: ignore
     except ImportError as error:
         raise InstallError(
             "pywin32 is required to create the Start Menu shortcut."
@@ -102,8 +101,7 @@ def _create_windows_launchers(root: Path, assets: Path) -> list[Path]:
         shortcut.Targetpath = str(target)
         shortcut.WorkingDirectory = str(target.parent)
         shortcut.Description = paths.APP_NAME
-        if icon.is_file():
-            shortcut.IconLocation = str(icon)
+        shortcut.IconLocation = str(icon)
         shortcut.save()
     except Exception as error:
         raise InstallError(f"Could not create the shortcut: {error}") from error
@@ -111,30 +109,21 @@ def _create_windows_launchers(root: Path, assets: Path) -> list[Path]:
     return [link]
 
 
-def _create_linux_launchers(root: Path, assets: Path) -> list[Path]:
+def _create_linux_launchers(root: Path) -> list[Path]:
     """
     Install icons into the hicolor theme and write a desktop entry.
 
     Args:
         root: Installation root.
-        assets: Directory containing the PNG ladder and ``app.svg``.
 
     Returns:
         Paths created.
     """
-    created = install_linux_icons(assets)
+    created = icons.install_linux_icons(resources.icon_svg())
 
     entry = paths.desktop_entry_dir() / f"{paths.DESKTOP_ID}.desktop"
     entry.parent.mkdir(parents=True, exist_ok=True)
-    entry.write_text(
-        _DESKTOP_ENTRY.format(
-            name=paths.APP_NAME,
-            executable=paths.app_executable(root),
-            icon=paths.DESKTOP_ID,
-            wm_class=paths.APP_SLUG,
-        ),
-        encoding="utf-8",
-    )
+    entry.write_text(desktop_entry_text(root), encoding="utf-8")
     entry.chmod(0o755)
     created.append(entry)
 
@@ -142,43 +131,8 @@ def _create_linux_launchers(root: Path, assets: Path) -> list[Path]:
     return created
 
 
-def install_linux_icons(assets: Path) -> list[Path]:
-    """Copy the icon ladder into the per-user hicolor theme.
-
-    Args:
-        assets: Directory containing ``app_<size>.png`` and ``app.svg``.
-
-    Returns:
-        Paths of the installed icon files.
-    """
-    theme = paths.icon_theme_dir()
-    created: list[Path] = []
-
-    for size in ICON_SIZES:
-        source = assets / f"app_{size}.png"
-        if not source.is_file():
-            continue
-        target = theme / f"{size}x{size}" / "apps" / f"{paths.DESKTOP_ID}.png"
-        target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(source, target)
-        created.append(target)
-
-    scalable = assets / "app.svg"
-    if scalable.is_file():
-        target = theme / "scalable" / "apps" / f"{paths.DESKTOP_ID}.svg"
-        target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(scalable, target)
-        created.append(target)
-
-    return created
-
-
 def _refresh_linux_caches() -> None:
-    """Refresh the icon and desktop databases, ignoring absent tools.
-
-    Both commands are advisory: the desktop environment will pick the
-    changes up on next login regardless, so a missing binary is not an error.
-    """
+    """Refresh the icon and desktop databases, ignoring absent tools."""
     commands = [
         ["gtk-update-icon-cache", "-f", "-t", str(paths.icon_theme_dir())],
         ["update-desktop-database", str(paths.desktop_entry_dir())],
@@ -190,15 +144,14 @@ def _refresh_linux_caches() -> None:
 
 
 def desktop_entry_text(root: Path) -> str:
-    """Render the desktop entry without writing it.
-
-    Exposed for testing and for showing the user what will be installed.
+    """
+    Render the desktop entry without writing it.
 
     Args:
         root: Installation root.
 
     Returns:
-        Contents of the ``.desktop`` file.
+        Contents of the `.desktop` file.
     """
     return _DESKTOP_ENTRY.format(
         name=paths.APP_NAME,
@@ -209,10 +162,11 @@ def desktop_entry_text(root: Path) -> str:
 
 
 def sanitise_wm_class(value: str) -> str:
-    """Normalise a WM_CLASS candidate.
+    """
+    Normalise a WM_CLASS candidate.
 
     Args:
-        value: Raw value, typically ``argv[0]``.
+        value: Raw value, typically `argv[0]`.
 
     Returns:
         The value reduced to characters valid in a desktop entry key.

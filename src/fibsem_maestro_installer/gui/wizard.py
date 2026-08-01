@@ -5,11 +5,10 @@
 
 from __future__ import annotations
 
-import threading
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import (
     QCheckBox,
     QFileDialog,
@@ -26,7 +25,7 @@ from PyQt6.QtWidgets import (
     QWizardPage,
 )
 
-from fibsem_maestro_installer import installer, paths
+from fibsem_maestro_installer import icons, installer, paths, resources
 from fibsem_maestro_installer.autoscript import (
     looks_like_autoscript,
     validate_import,
@@ -34,7 +33,11 @@ from fibsem_maestro_installer.autoscript import (
 from fibsem_maestro_installer.config import write_config
 from fibsem_maestro_installer.errors import InstallError
 from fibsem_maestro_installer.gui.worker import TaskWorker
-from fibsem_maestro_installer.progress import ProgressReporter
+
+if TYPE_CHECKING:
+    import threading
+
+    from fibsem_maestro_installer.progress import ProgressReporter
 
 PAGE_WELCOME = 0
 PAGE_LOCATION = 1
@@ -452,7 +455,6 @@ class InstallerWizard(QWizard):
     def __init__(
         self,
         repository: str,
-        assets: Path,
         bundle: Path | None,
         token: str | None = None,
     ) -> None:
@@ -461,13 +463,11 @@ class InstallerWizard(QWizard):
 
         Args:
             repository: GitHub repository in `owner/name` form.
-            assets: Directory containing bundled icons.
             bundle: Offline bundle directory, or None.
             token: GitHub token for private repositories, or None.
         """
         super().__init__()
         self.repository = repository
-        self.assets = assets
         self.bundle = bundle
         self.token = token
         self.action = ACTION_INSTALL
@@ -479,9 +479,7 @@ class InstallerWizard(QWizard):
         self.setOption(QWizard.WizardOption.NoBackButtonOnStartPage, True)
         self.resize(620, 460)
 
-        icon = assets / "icon.svg"
-        if icon.is_file():
-            self.setWindowIcon(QIcon(str(icon)))
+        self.setWindowIcon(icons.load_window_icon(resources.icon_svg()))
 
         self.welcome_page = WelcomePage(self)
         self.location_page = LocationPage(self)
@@ -533,7 +531,6 @@ class InstallerWizard(QWizard):
         return installer.InstallPlan(
             root=self.install_root,
             autoscript_path=self.autoscript_path,
-            assets=self.assets,
             repository=self.repository,
             bundle=self.bundle,
             token=self.token,
@@ -552,7 +549,7 @@ class InstallerWizard(QWizard):
             manifest = self.existing
 
             def uninstall_task(
-                report: ProgressReporter, cancel: threading.Event
+                report: ProgressReporter, _cancel: threading.Event
             ) -> str:
                 assert manifest is not None
                 installer.uninstall(manifest, report)
@@ -564,7 +561,7 @@ class InstallerWizard(QWizard):
             root = self.install_root
             autoscript = self.autoscript_path
 
-            def relink_task(report: ProgressReporter, cancel: threading.Event) -> str:
+            def relink_task(report: ProgressReporter, _cancel: threading.Event) -> str:
                 report("Verifying the Autoscript installation", 30)
                 validate_import(paths.venv_python(root), autoscript)
                 report("Writing configuration", 70)

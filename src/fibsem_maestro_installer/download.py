@@ -7,14 +7,16 @@ from __future__ import annotations
 
 import hashlib
 import json
-import threading
 import urllib.error
 import urllib.request
-from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from fibsem_maestro_installer.errors import InstallError
 from fibsem_maestro_installer.progress import ProgressReporter, check_cancelled
+
+if TYPE_CHECKING:
+    import threading
+    from pathlib import Path
 
 _CHUNK = 64 * 1024
 _TIMEOUT = 30

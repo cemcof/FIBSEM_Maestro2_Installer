@@ -8,10 +8,12 @@ from __future__ import annotations
 import re
 import shutil
 import tarfile
-import threading
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+from packaging.utils import parse_wheel_filename
 
 from fibsem_maestro_installer import launchers, paths, releases
 from fibsem_maestro_installer.autoscript import validate_import
@@ -20,6 +22,9 @@ from fibsem_maestro_installer.errors import InstallError
 from fibsem_maestro_installer.manifest import Manifest, load_manifest
 from fibsem_maestro_installer.progress import ProgressReporter, check_cancelled
 from fibsem_maestro_installer.uv_tool import ensure_uv, run_uv
+
+if TYPE_CHECKING:
+    import threading
 
 WHEEL_PATTERN = re.compile(r"^(?P<name>[^-]+)-(?P<version>[^-]+)-")
 
@@ -40,7 +45,6 @@ class InstallPlan:
 
     root: Path
     autoscript_path: Path
-    assets: Path
     repository: str
     bundle: Path | None = None
     token: str | None = None
@@ -98,11 +102,11 @@ def bundled_wheel(bundle: Path) -> Path:
         InstallError: If no matching wheel is present.
     """
     prefix = paths.DISTRIBUTION.replace("-", "_")
-    matches = sorted((bundle / "wheels").glob(f"{prefix}-*.whl"))
+    matches = list((bundle / "wheels").glob(f"{prefix}-*.whl"))
     if not matches:
         raise InstallError(f"Offline bundle contains no {paths.DISTRIBUTION} wheel.")
 
-    return matches[-1]
+    return max(matches, key=lambda p: parse_wheel_filename(p.name)[1])
 
 
 def _extract_python(bundle: Path, root: Path) -> Path:
@@ -279,7 +283,7 @@ def install(
 
     check_cancelled(cancel)
     report("Creating shortcuts", 90)
-    created = launchers.create_launchers(root, plan.assets)
+    created = launchers.create_launchers(root)
 
     report("Finishing", 97)
     shutil.rmtree(root / "downloads", ignore_errors=True)
