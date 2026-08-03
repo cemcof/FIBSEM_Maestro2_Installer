@@ -168,26 +168,30 @@ def ensure_uv(
     return target
 
 
-def uv_environment(root: Path, offline: bool) -> dict[str, str]:
+def uv_environment(root: Path, offline: bool, managed_python: bool) -> dict[str, str]:
     """
     Build the environment for uv invocations.
 
     Args:
         root: Installation root.
         offline: Whether network access should be refused outright.
+        managed_python: Whether to expose the private intepreter directory.
 
     Returns:
-        Environment mapping to pass to :func:`subprocess.run`.
+        Environment mapping to pass to `subprocess.run`.
     """
     env = dict(os.environ)
     env.update(
         {
-            "UV_PYTHON_INSTALL_DIR": str(paths.python_install_dir(root)),
             "UV_CACHE_DIR": str(paths.cache_dir(root)),
             "UV_NO_CONFIG": "1",
             "UV_NO_PROGRESS": "1",
         }
     )
+
+    if managed_python:
+        env["UV_PYTHON_INSTALL_DIR"] = str(paths.python_install_dir(root))
+
     if offline:
         env["UV_OFFLINE"] = "1"
         env["UV_PYTHON_DOWNLOADS"] = "never"
@@ -200,6 +204,7 @@ def run_uv(
     arguments: list[str],
     root: Path,
     offline: bool,
+    managed_python: bool,
     description: str,
 ) -> str:
     """
@@ -210,6 +215,7 @@ def run_uv(
         arguments: Arguments following the executable.
         root: Installation root.
         offline: Whether to forbid network access.
+        managed_python: Whether to expose the private intepreter directory.
         description: Phrase used in the error message on failure.
 
     Returns:
@@ -220,7 +226,7 @@ def run_uv(
     """
     completed = subprocess.run(
         [str(uv), *arguments],
-        env=uv_environment(root, offline),
+        env=uv_environment(root, offline, managed_python),
         capture_output=True,
         text=True,
         creationflags=_no_window_flag(),

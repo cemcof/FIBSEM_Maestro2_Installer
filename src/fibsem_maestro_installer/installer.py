@@ -206,14 +206,16 @@ def install(
             root,
             offline=False,
             description="Installing Python",
+            managed_python=True,
         )
-        interpreter = run_uv(
-            uv,
-            ["python", "find", plan.python_version],
-            root,
-            offline=False,
-            description="Locating the installed Python",
-        ).strip()
+
+        candidates = sorted(
+            paths.python_install_dir(root).glob(f"cpython-{plan.python_version}.*")
+        )
+        if not candidates:
+            raise InstallError("The Python interpreter could not be located.")
+        name = "python.exe" if paths.is_windows() else "bin/python3"
+        interpreter = str(candidates[-1] / name)
 
     check_cancelled(cancel)
     report("Creating the application environment", 32)
@@ -226,6 +228,7 @@ def install(
         root,
         offline=plan.offline,
         description="Creating the virtual environment",
+        managed_python=False,
     )
 
     check_cancelled(cancel)
@@ -276,6 +279,7 @@ def install(
         root,
         offline=plan.offline,
         description="Installing the application",
+        managed_python=False,
     )
 
     check_cancelled(cancel)

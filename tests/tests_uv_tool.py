@@ -49,7 +49,7 @@ def test_uv_asset_name_rejects_unknown_architecture(
 
 
 def test_uv_environment_confines_uv_to_the_install_root(tmp_path: Path) -> None:
-    env = uv_tool.uv_environment(tmp_path, offline=False)
+    env = uv_tool.uv_environment(tmp_path, offline=False, managed_python=True)
 
     assert env["UV_PYTHON_INSTALL_DIR"] == str(paths.python_install_dir(tmp_path))
     assert env["UV_CACHE_DIR"] == str(paths.cache_dir(tmp_path))
@@ -57,8 +57,19 @@ def test_uv_environment_confines_uv_to_the_install_root(tmp_path: Path) -> None:
     assert "UV_OFFLINE" not in env
 
 
+def test_uv_environment_does_not_set_uv_python_install_dir_when_managed_python_is_false(
+    tmp_path: Path,
+) -> None:
+    env = uv_tool.uv_environment(tmp_path, offline=False, managed_python=False)
+
+    assert not env.get("UV_PYTHON_INSTALL_DIR")
+    assert env["UV_CACHE_DIR"] == str(paths.cache_dir(tmp_path))
+    assert env["UV_NO_CONFIG"] == "1"
+    assert "UV_OFFLINE" not in env
+
+
 def test_uv_environment_forbids_network_when_offline(tmp_path: Path) -> None:
-    env = uv_tool.uv_environment(tmp_path, offline=True)
+    env = uv_tool.uv_environment(tmp_path, offline=True, managed_python=False)
 
     assert env["UV_OFFLINE"] == "1"
     assert env["UV_PYTHON_DOWNLOADS"] == "never"
