@@ -9,6 +9,7 @@ import ctypes
 import os
 import sys
 
+import qdarkstyle
 from PyQt6.QtWidgets import QApplication
 
 from fibsem_maestro_installer import icons, paths, resources
@@ -24,9 +25,10 @@ def main() -> int:
         )
 
     app = QApplication(sys.argv)
-    app.setStyle("Fusion")
     app.setApplicationName(f"{paths.APP_NAME} Installer")
     app.setDesktopFileName(f"{paths.DESKTOP_ID}.Installer")
+
+    app.setStyleSheet(qdarkstyle.load_stylesheet(qt_api="pyqt6"))
 
     app.setWindowIcon(icons.load_window_icon(resources.icon_svg()))
 
