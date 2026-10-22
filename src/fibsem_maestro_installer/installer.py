@@ -180,6 +180,9 @@ def install(
     Raises:
         InstallError: If any step fails.
     """
+    # never wipe `root` here: FIBSEM Maestro keeps the user's profiles and logs in
+    # `root/config` and `root/logs`, which must survive Update and Repair; only
+    # delete the installer's own subfolders (runtime/, python/, downloads/)
     root = plan.root
     root.mkdir(parents=True, exist_ok=True)
 
