@@ -22,7 +22,7 @@ if TYPE_CHECKING:
     import threading
     from pathlib import Path
 
-UV_VERSION = "0.12.1"
+UV_VERSION = "0.13.7"
 UV_RELEASE_URL = "https://github.com/astral-sh/uv/releases/download"
 
 
@@ -103,8 +103,9 @@ def ensure_uv(
     """
     Make a private uv executable available.
 
-    Uses the copy from an offline bundle when one is present, otherwise
-    downloads the pinned release and verifies its checksum.
+    Uses the copy from an offline bundle when one is present. Otherwise an
+    existing uv is kept if it is the pinned release; if not, the pinned release
+    is downloaded, its checksum verified, and the existing uv replaced.
 
     Args:
         root: Installation root.
@@ -119,12 +120,10 @@ def ensure_uv(
         InstallError: If uv cannot be provisioned.
     """
     target = paths.uv_binary(root)
-    if target.is_file():
-        return target
-
     target.parent.mkdir(parents=True, exist_ok=True)
 
     if bundle is not None:
+        # always the bundle's copy: it matches the interpreter shipped beside it
         source = bundle / ("uv.exe" if paths.is_windows() else "uv")
         if not source.is_file():
             raise InstallError(f"Offline bundle is missing {source.name}")
@@ -133,7 +132,13 @@ def ensure_uv(
         target.chmod(0o755)
         return target
 
+    # an older uv may not know the pinned interpreter,
+    # so only the pinned release is reused
+    if target.is_file() and installed_uv_version(target) == UV_VERSION:
+        return target
+
     asset = uv_asset_name()
+
     report(f"Downloading uv {UV_VERSION}", 2)
     archive = download_file(
         f"{UV_RELEASE_URL}/{UV_VERSION}/{asset}",
@@ -248,3 +253,31 @@ def _no_window_flag() -> int:
         `CREATE_NO_WINDOW` on Windows, 0 elsewhere.
     """
     return getattr(subprocess, "CREATE_NO_WINDOW", 0) if paths.is_windows() else 0
+
+
+def installed_uv_version(uv: Path) -> str | None:
+    """
+    Ask a uv executable for its version.
+
+    Args:
+        uv: Path of the uv executable.
+
+    Returns:
+        The version, such as `0.13.7`, or None if uv cannot be run.
+    """
+    try:
+        completed = subprocess.run(
+            [str(uv), "--version"],
+            capture_output=True,
+            text=True,
+            creationflags=_no_window_flag(),
+            check=False,
+            timeout=30,
+        )
+    except OSError, subprocess.TimeoutExpired:
+        return None
+
+    words = completed.stdout.split()
+    if completed.returncode != 0 or len(words) < 2 or words[0] != "uv":
+        return None
+    return words[1]

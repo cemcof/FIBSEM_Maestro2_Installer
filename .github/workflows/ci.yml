@@ -44,6 +44,13 @@ jobs:
       - name: Install the project and the dev tools
         run: uv sync --locked --group dev
 
+      - name: Check that the pinned uv offers the pinned Python
+        if: runner.os == 'Linux'
+        run: |
+          read -r UV PY < <(uv run --quiet python -c "from fibsem_maestro_installer import paths, uv_tool; print(uv_tool.UV_VERSION, paths.PYTHON_VERSION)")
+          curl -LsSf "https://github.com/astral-sh/uv/releases/download/$UV/uv-x86_64-unknown-linux-gnu.tar.gz" | tar -xz
+          ./uv-x86_64-unknown-linux-gnu/uv python list --all-versions --only-downloads | grep -q "cpython-$PY-linux-x86_64-gnu"
+
       - name: ruff check
         run: uv run ruff check .
 
