@@ -90,7 +90,7 @@ def _create_windows_launchers(root: Path) -> list[Path]:
     target = paths.app_executable(root)
 
     try:
-        from win32com.client import Dispatch  # type: ignore
+        from win32com.client import Dispatch
     except ImportError as error:
         raise InstallError(
             "pywin32 is required to create the Start Menu shortcut."

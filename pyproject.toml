@@ -20,7 +20,7 @@ dynamic = ["version"]
 write_to = "src/fibsem_maestro_installer/_version.py"
 
 [tool.setuptools]
-package-dir = {"" = "src"}
+package-dir = { "" = "src" }
 
 [dependency-groups]
 dev = [
@@ -51,3 +51,7 @@ extend-select = [
     "NPY", # Some numpy-specific things
     "ARG", # Catch incorrect use of arguments
 ]
+
+[tool.ty.analysis]
+# pywin32 is installed on Windows only
+allowed-unresolved-imports = ["win32com.**"]
