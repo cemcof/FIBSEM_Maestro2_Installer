@@ -26,7 +26,9 @@ def test_written_links_are_read_back(tmp_path: Path) -> None:
     write_links(path, {"autoscript": Path("/opt/autoscript")})
 
     assert read_links(path) == {"autoscript": Path("/opt/autoscript")}
-    assert _read(path) == {"libraries": {"autoscript": {"path": "/opt/autoscript"}}}
+    assert _read(path) == {
+        "libraries": {"autoscript": {"path": str(Path("/opt/autoscript"))}}
+    }
 
 
 def test_legacy_autoscript_table_is_read(tmp_path: Path) -> None:
@@ -43,7 +45,9 @@ def test_writing_migrates_the_legacy_table(tmp_path: Path) -> None:
 
     write_links(path, read_links(path))
 
-    assert _read(path) == {"libraries": {"autoscript": {"path": "/opt/autoscript"}}}
+    assert _read(path) == {
+        "libraries": {"autoscript": {"path": str(Path("/opt/autoscript"))}}
+    }
 
 
 def test_writing_no_links_unlinks_everything(tmp_path: Path) -> None:
