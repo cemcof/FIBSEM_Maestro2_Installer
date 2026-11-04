@@ -1,6 +1,6 @@
-# FIBSEM Maestro Installer
+# FIBSEM Maestro 2 Installer
 
-Installs, updates, repairs and uninstalls [FIBSEM Maestro](https://github.com/Ladme/FIBSEM_Maestro) for the current user.
+Installs, updates, repairs and uninstalls [FIBSEM Maestro 2](https://github.com/cemcof/FIBSEM_Maestro2) for the current user.
 
 ## Usage
 
