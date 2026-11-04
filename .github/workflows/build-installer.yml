@@ -27,18 +27,14 @@ jobs:
         with:
           enable-cache: true
 
-      # Qt's xcb platform plugin needs these at run time; they are installed
-      # here so PyInstaller bundles them into the installer, which then also
-      # starts on machines that lack them
+      # libxcb-cursor0: Qt >= 6.5 needs it for its xcb platform plugin; installed
+      # here so PyInstaller bundles it, or the installer fails to start on
+      # machines without it
       - name: Install Qt runtime libraries
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y \
-            libegl1 libgl1 libxkbcommon0 libdbus-1-3 xvfb \
-            libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 libxcb-image0 \
-            libxcb-keysyms1 libxcb-randr0 libxcb-render-util0 libxcb-shape0 \
-            libxcb-xinerama0 libxcb-xkb1
+          sudo apt-get install -y libegl1 libgl1 libxkbcommon0 libdbus-1-3 libxcb-cursor0 xvfb
 
       - name: Install dependencies
         run: uv sync --group dev
