@@ -15,7 +15,7 @@ from PyQt6.QtWidgets import QApplication
 from fibsem_maestro_installer import icons, paths, resources
 from fibsem_maestro_installer.gui.wizard import InstallerWizard
 
-DEFAULT_REPOSITORY = "Ladme/FIBSEM_Maestro"
+DEFAULT_REPOSITORY = "cemcof/FIBSEM_Maestro2"
 
 
 def main() -> int:
