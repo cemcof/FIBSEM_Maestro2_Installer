@@ -25,6 +25,9 @@ if TYPE_CHECKING:
 UV_VERSION = "0.13.7"
 UV_RELEASE_URL = "https://github.com/astral-sh/uv/releases/download"
 
+_INHERITED_UV_VARIABLES = frozenset({"UV_NATIVE_TLS", "UV_SYSTEM_CERTS"})
+"""uv variables kept from the user's environment: certificates for TLS proxies."""
+
 
 def uv_asset_name() -> str:
     """
@@ -177,6 +180,11 @@ def uv_environment(root: Path, offline: bool, managed_python: bool) -> dict[str,
     """
     Build the environment for uv invocations.
 
+    The user's own `UV_*` variables are dropped, as `UV_NO_CONFIG` drops their
+    configuration files: a `UV_PYTHON_DOWNLOADS=never` or `UV_PYTHON_INSTALL_DIR`
+    meant for their projects would otherwise change what the installer does.
+    Only the certificate settings are kept, which a TLS-intercepting proxy needs.
+
     Args:
         root: Installation root.
         offline: Whether network access should be refused outright.
@@ -185,7 +193,12 @@ def uv_environment(root: Path, offline: bool, managed_python: bool) -> dict[str,
     Returns:
         Environment mapping to pass to `subprocess.run`.
     """
-    env = dict(os.environ)
+    env = {
+        name: value
+        for name, value in os.environ.items()
+        if not name.upper().startswith("UV_") or name.upper() in _INHERITED_UV_VARIABLES
+    }
+
     env.update(
         {
             "UV_CACHE_DIR": str(paths.cache_dir(root)),

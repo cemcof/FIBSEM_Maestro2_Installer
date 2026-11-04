@@ -43,6 +43,9 @@ def test_uv_asset_name_rejects_unknown_architecture(
 ) -> None:
     monkeypatch.setattr(sys, "platform", "linux")
     monkeypatch.setattr(platform, "machine", lambda: "riscv64")
+    # the error message asks for the system; unpatched, platform.uname() would run
+    # with the faked sys.platform and cache a wrong answer for later tests (Windows)
+    monkeypatch.setattr(platform, "system", lambda: "Linux")
 
     with pytest.raises(InstallError, match="Unsupported platform"):
         uv_tool.uv_asset_name()
@@ -58,8 +61,11 @@ def test_uv_environment_confines_uv_to_the_install_root(tmp_path: Path) -> None:
 
 
 def test_uv_environment_does_not_set_uv_python_install_dir_when_managed_python_is_false(
-    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    # setup-uv sets this in CI; a developer may have it set too
+    monkeypatch.setenv("UV_PYTHON_INSTALL_DIR", str(tmp_path / "elsewhere"))
+
     env = uv_tool.uv_environment(tmp_path, offline=False, managed_python=False)
 
     assert not env.get("UV_PYTHON_INSTALL_DIR")
@@ -141,6 +147,10 @@ def fake_release(monkeypatch: pytest.MonkeyPatch) -> list[str]:
         destination.write_text("pinned", encoding="utf-8")
         return destination
 
+    # independent of the machine the tests run on
+    monkeypatch.setattr(
+        uv_tool, "uv_asset_name", lambda: "uv-x86_64-unknown-linux-gnu.tar.gz"
+    )
     monkeypatch.setattr(uv_tool, "download_file", download)
     monkeypatch.setattr(uv_tool, "_extract_uv", extract)
     return downloaded
@@ -238,3 +248,27 @@ def test_installed_uv_version_parses_the_version_output(
 
 def test_installed_uv_version_is_none_for_a_missing_executable(tmp_path: Path) -> None:
     assert uv_tool.installed_uv_version(tmp_path / "missing-uv") is None
+
+
+def test_uv_environment_drops_the_users_uv_variables(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("UV_PYTHON_DOWNLOADS", "never")
+    monkeypatch.setenv("UV_INDEX_URL", "https://example.invalid/simple")
+
+    env = uv_tool.uv_environment(tmp_path, offline=False, managed_python=True)
+
+    assert "UV_PYTHON_DOWNLOADS" not in env
+    assert "UV_INDEX_URL" not in env
+
+
+def test_uv_environment_keeps_the_users_certificate_settings(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("UV_SYSTEM_CERTS", "1")
+    monkeypatch.setenv("SSL_CERT_FILE", str(tmp_path / "ca.pem"))
+
+    env = uv_tool.uv_environment(tmp_path, offline=False, managed_python=True)
+
+    assert env["UV_SYSTEM_CERTS"] == "1"
+    assert env["SSL_CERT_FILE"] == str(tmp_path / "ca.pem")
