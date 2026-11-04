@@ -26,55 +26,66 @@ from PyQt6.QtWidgets import (
 )
 
 from fibsem_maestro_installer import icons, installer, paths, resources
-from fibsem_maestro_installer.autoscript import (
-    looks_like_autoscript,
-    validate_import,
-)
-from fibsem_maestro_installer.config import write_config
+from fibsem_maestro_installer.config import read_links
 from fibsem_maestro_installer.errors import InstallError
+from fibsem_maestro_installer.gui.library_row import LibraryRow
 from fibsem_maestro_installer.gui.worker import TaskWorker
+from fibsem_maestro_installer.libraries import LIBRARIES, library
 
 if TYPE_CHECKING:
     import threading
+    from collections.abc import Mapping
 
+    from fibsem_maestro_installer.libraries import LinkStatus
     from fibsem_maestro_installer.progress import ProgressReporter
 
 PAGE_WELCOME = 0
 PAGE_LOCATION = 1
-PAGE_AUTOSCRIPT = 2
-PAGE_PROGRESS = 3
+PAGE_PROGRESS = 2
+PAGE_LIBRARIES = 3
 PAGE_FINISH = 4
 
 ACTION_INSTALL = "install"
 ACTION_UPDATE = "update"
 ACTION_REPAIR = "repair"
-ACTION_RELINK = "relink"
+ACTION_LIBRARIES = "libraries"
 ACTION_UNINSTALL = "uninstall"
 
+_MUTED_COLOR = "#8b949e"
 
-def _browse_row(edit: QLineEdit, caption: str) -> QHBoxLayout:
+
+def _library_name(key: str) -> str:
     """
-    Build a line edit paired with a directory browse button.
+    Return the display name of a library key.
 
     Args:
-        edit: The line edit to populate.
-        caption: Title of the directory dialog.
+        key: Identifier of the library.
 
     Returns:
-        Layout containing both widgets.
+        The library's name, or the key for a library this installer does not know.
     """
-    button = QPushButton("Browse...")
-    layout = QHBoxLayout()
-    layout.addWidget(edit)
-    layout.addWidget(button)
+    lib = library(key)
+    return lib.name if lib is not None else key
 
-    def choose() -> None:
-        chosen = QFileDialog.getExistingDirectory(edit, caption, edit.text())
-        if chosen:
-            edit.setText(chosen)
 
-    button.clicked.connect(choose)
-    return layout
+def _links_summary(links: Mapping[str, object]) -> str:
+    """
+    Describe which libraries are linked, for the welcome and finish pages.
+
+    Args:
+        links: Linked libraries, by library key.
+
+    Returns:
+        A sentence listing them, or explaining that none is linked.
+    """
+    if not links:
+        return (
+            "No microscope library is linked; FIBSEM Maestro runs with the "
+            "simulated microscope only."
+        )
+    return "Linked microscope libraries: " + ", ".join(
+        _library_name(key) for key in sorted(links)
+    )
 
 
 class WelcomePage(QWizardPage):
@@ -98,7 +109,7 @@ class WelcomePage(QWizardPage):
 
         self.update_choice = QRadioButton("Update to the latest version")
         self.repair_choice = QRadioButton("Repair this installation")
-        self.relink_choice = QRadioButton("Change the Autoscript location")
+        self.libraries_choice = QRadioButton("Manage microscope libraries")
         self.uninstall_choice = QRadioButton("Uninstall")
 
         for button in self._choices():
@@ -115,7 +126,7 @@ class WelcomePage(QWizardPage):
         return [
             self.update_choice,
             self.repair_choice,
-            self.relink_choice,
+            self.libraries_choice,
             self.uninstall_choice,
         ]
 
@@ -134,15 +145,18 @@ class WelcomePage(QWizardPage):
             self._intro.setText(
                 f"This wizard will install {paths.APP_NAME} for the current "
                 f"user from {source}.\n\n"
-                "You will be asked for the location of your Autoscript "
-                "installation, which is required to control the microscope "
-                "and is not distributed with this software."
+                "After the installation, you can link the microscope libraries "
+                "installed on this computer, such as Thermo Fisher Autoscript. "
+                "Linking is optional and can also be done later by running the "
+                "installer again."
             )
             self._wizard.action = ACTION_INSTALL
         else:
             self._intro.setText(
-                f"{paths.APP_NAME} {existing.app_version} is already "
-                f"installed in\n{existing.root}\n\nChoose what to do:"
+                f"{paths.APP_NAME} {existing.app_version} is installed in\n"
+                f"{existing.root}\n\n"
+                f"{_links_summary(existing.libraries)}\n\n"
+                "Choose what to do:"
             )
             self.update_choice.setChecked(True)
 
@@ -160,9 +174,9 @@ class WelcomePage(QWizardPage):
         if self.uninstall_choice.isChecked():
             self._wizard.action = ACTION_UNINSTALL
             return PAGE_PROGRESS
-        if self.relink_choice.isChecked():
-            self._wizard.action = ACTION_RELINK
-            return PAGE_AUTOSCRIPT
+        if self.libraries_choice.isChecked():
+            self._wizard.action = ACTION_LIBRARIES
+            return PAGE_LIBRARIES
         if self.repair_choice.isChecked():
             self._wizard.action = ACTION_REPAIR
             return PAGE_PROGRESS
@@ -191,14 +205,27 @@ class LocationPage(QWizardPage):
 
         layout = QVBoxLayout(self)
         self.path_edit = QLineEdit(str(paths.default_install_root()))
-        layout.addLayout(_browse_row(self.path_edit, "Installation folder"))
+        button = QPushButton("Browse...")
+        row = QHBoxLayout()
+        row.addWidget(self.path_edit)
+        row.addWidget(button)
+        layout.addLayout(row)
 
         self._source = QLabel()
         self._source.setWordWrap(True)
         layout.addWidget(self._source)
         layout.addStretch(1)
 
+        button.clicked.connect(self._choose_folder)
         self.path_edit.textChanged.connect(self.completeChanged)
+
+    def _choose_folder(self) -> None:
+        """Let the user pick the installation folder."""
+        chosen = QFileDialog.getExistingDirectory(
+            self, "Installation folder", self.path_edit.text()
+        )
+        if chosen:
+            self.path_edit.setText(chosen)
 
     def initializePage(self) -> None:
         """Describe where the application will be fetched from."""
@@ -225,75 +252,7 @@ class LocationPage(QWizardPage):
 
     def nextId(self) -> int:
         """
-        Continue to the Autoscript page.
-
-        Returns:
-            Identifier of the next page.
-        """
-        return PAGE_AUTOSCRIPT
-
-
-class AutoscriptPage(QWizardPage):
-    """Collects and pre-checks the Autoscript location."""
-
-    def __init__(self, wizard: InstallerWizard) -> None:
-        """
-        Initialize the page.
-
-        Args:
-            wizard: Owning wizard.
-        """
-        super().__init__()
-        self._wizard = wizard
-        self.setTitle("Autoscript location")
-        self.setSubTitle("Select the folder of your existing Autoscript installation.")
-
-        layout = QVBoxLayout(self)
-        self.path_edit = QLineEdit()
-        layout.addLayout(_browse_row(self.path_edit, "Autoscript folder"))
-
-        self._status = QLabel()
-        self._status.setWordWrap(True)
-        layout.addWidget(self._status)
-        layout.addStretch(1)
-
-        self.path_edit.textChanged.connect(self._revalidate)
-
-    def initializePage(self) -> None:
-        """Prefill from an existing installation when repointing."""
-        existing = self._wizard.existing
-        if existing is not None and not self.path_edit.text():
-            self.path_edit.setText(existing.autoscript_path)
-        self._revalidate()
-
-    def _revalidate(self) -> None:
-        """Update the inline status message and the Next button."""
-        text = self.path_edit.text().strip()
-        if not text:
-            self._status.setText("")
-        elif looks_like_autoscript(Path(text)):
-            self._status.setText("Autoscript client package found.")
-        else:
-            self._status.setText(
-                "This folder does not contain "
-                "'autoscript_sdb_microscope_client'. It is usually inside "
-                "the Autoscript installation directory."
-            )
-        self.completeChanged.emit()
-
-    def isComplete(self) -> bool:
-        """
-        Report whether the selected folder looks like Autoscript.
-
-        Returns:
-            True when the client package is present.
-        """
-        text = self.path_edit.text().strip()
-        return bool(text) and looks_like_autoscript(Path(text))
-
-    def nextId(self) -> int:
-        """
-        Continue to the progress page.
+        Continue to the installation.
 
         Returns:
             Identifier of the next page.
@@ -302,7 +261,12 @@ class AutoscriptPage(QWizardPage):
 
 
 class ProgressPage(QWizardPage):
-    """Runs the selected operation and shows its progress."""
+    """
+    Runs the selected operation and shows its progress.
+
+    A commit page: once the operation has run, the wizard cannot go back to it,
+    which would run it again.
+    """
 
     def __init__(self, wizard: InstallerWizard) -> None:
         """
@@ -316,6 +280,8 @@ class ProgressPage(QWizardPage):
         self._worker: TaskWorker | None = None
         self._done = False
         self.setTitle("Working")
+        self.setCommitPage(True)
+        self.setButtonText(QWizard.WizardButton.CommitButton, "&Next >")
 
         layout = QVBoxLayout(self)
         self._bar = QProgressBar()
@@ -398,6 +364,118 @@ class ProgressPage(QWizardPage):
 
     def nextId(self) -> int:
         """
+        Continue to the libraries after a fresh install or when a link broke.
+
+        Returns:
+            Identifier of the next page.
+        """
+        action = self._wizard.action
+        if action == ACTION_INSTALL or (
+            action in {ACTION_UPDATE, ACTION_REPAIR} and self._wizard.link_problems
+        ):
+            return PAGE_LIBRARIES
+        return PAGE_FINISH
+
+
+class LibrariesPage(QWizardPage):
+    """Links the manufacturer libraries; every one of them is optional."""
+
+    def __init__(self, wizard: InstallerWizard) -> None:
+        """
+        Initialize the page.
+
+        Args:
+            wizard: Owning wizard.
+        """
+        super().__init__()
+        self._wizard = wizard
+        self.setTitle("Microscope libraries (optional)")
+
+        layout = QVBoxLayout(self)
+        self.rows = [LibraryRow(lib) for lib in LIBRARIES]
+        for row in self.rows:
+            layout.addWidget(row)
+            row.changed.connect(self.completeChanged)
+
+        note = QLabel(
+            f"<span style='color:{_MUTED_COLOR}'>Without a linked library, "
+            f"{paths.APP_NAME} runs with the simulated microscope only.</span>"
+        )
+        note.setWordWrap(True)
+        layout.addWidget(note)
+        layout.addStretch(1)
+
+    def initializePage(self) -> None:
+        """Show the current links of the installation and check them."""
+        if self._wizard.link_problems:
+            self.setSubTitle(
+                "The update finished, but a linked library does not work with "
+                "the new version. Select the correct folder or unlink it."
+            )
+        else:
+            self.setSubTitle(
+                f"{paths.APP_NAME} controls a microscope through its "
+                "manufacturer's library. Link the libraries installed on this "
+                "computer, or leave them empty and link them later by running "
+                "the installer again."
+            )
+
+        root = self._wizard.install_root
+        links = read_links(paths.config_file(root))
+        for row in self.rows:
+            row.set_python(paths.venv_python(root))
+            row.set_folder(links.get(row.library.key))
+
+    def isComplete(self) -> bool:
+        """
+        Report whether every library is either unlinked or works.
+
+        Returns:
+            True when no link is being checked or broken.
+        """
+        return all(row.acceptable for row in self.rows)
+
+    def validatePage(self) -> bool:
+        """
+        Save the links.
+
+        Links to libraries this installer does not know (written by a newer
+        installer) are kept.
+
+        Returns:
+            True if the links were saved.
+        """
+        root = self._wizard.install_root
+        known = {row.library.key for row in self.rows}
+        links = {
+            key: folder
+            for key, folder in read_links(paths.config_file(root)).items()
+            if key not in known
+        }
+        links |= {
+            row.library.key: folder
+            for row in self.rows
+            if (folder := row.folder) is not None
+        }
+
+        try:
+            installer.set_links(root, links)
+        except OSError as error:
+            QMessageBox.critical(self, "Could not save the links", str(error))
+            return False
+
+        self._wizard.link_problems = {}
+        if self._wizard.action == ACTION_LIBRARIES:
+            self._wizard.summary = "The microscope libraries were updated."
+        return True
+
+    def shutdown(self) -> None:
+        """Wait for running link checks before the wizard closes."""
+        for row in self.rows:
+            row.shutdown()
+
+    def nextId(self) -> int:
+        """
         Continue to the summary page.
 
         Returns:
@@ -433,9 +511,13 @@ class FinishPage(QWizardPage):
         layout.addStretch(1)
 
     def initializePage(self) -> None:
-        """Show the summary produced by the worker."""
-        self._summary.setText(self._wizard.summary)
+        """Show the summary produced by the operation, and the linked libraries."""
         launchable = self._wizard.action != ACTION_UNINSTALL
+        parts = [self._wizard.summary]
+        if launchable:
+            links = read_links(paths.config_file(self._wizard.install_root))
+            parts.append(_links_summary(links))
+        self._summary.setText("\n\n".join(part for part in parts if part))
         self.launch_check.setVisible(launchable)
         self.launch_check.setChecked(False)
 
@@ -472,25 +554,26 @@ class InstallerWizard(QWizard):
         self.token = token
         self.action = ACTION_INSTALL
         self.summary = ""
+        self.link_problems: dict[str, LinkStatus] = {}
         self.existing = installer.existing_installation(paths.default_install_root())
 
         self.setWindowTitle(f"{paths.APP_NAME} Installer")
         self.setWizardStyle(QWizard.WizardStyle.ModernStyle)
         self.setOption(QWizard.WizardOption.NoBackButtonOnStartPage, True)
-        self.resize(620, 460)
+        self.resize(680, 500)
 
         self.setWindowIcon(icons.load_window_icon(resources.icon_svg()))
 
         self.welcome_page = WelcomePage(self)
         self.location_page = LocationPage(self)
-        self.autoscript_page = AutoscriptPage(self)
         self.progress_page = ProgressPage(self)
+        self.libraries_page = LibrariesPage(self)
         self.finish_page = FinishPage(self)
 
         self.setPage(PAGE_WELCOME, self.welcome_page)
         self.setPage(PAGE_LOCATION, self.location_page)
-        self.setPage(PAGE_AUTOSCRIPT, self.autoscript_page)
         self.setPage(PAGE_PROGRESS, self.progress_page)
+        self.setPage(PAGE_LIBRARIES, self.libraries_page)
         self.setPage(PAGE_FINISH, self.finish_page)
 
     @property
@@ -506,21 +589,6 @@ class InstallerWizard(QWizard):
             return Path(self.existing.root)
         return Path(self.location_page.path_edit.text().strip())
 
-    @property
-    def autoscript_path(self) -> Path:
-        """
-        Return the chosen Autoscript directory.
-
-        Returns:
-            The entered path, falling back to the existing installation's.
-        """
-        text = self.autoscript_page.path_edit.text().strip()
-        if text:
-            return Path(text)
-        if self.existing is not None:
-            return Path(self.existing.autoscript_path)
-        return Path()
-
     def build_plan(self) -> installer.InstallPlan:
         """
         Assemble an install plan from the collected state.
@@ -530,7 +598,6 @@ class InstallerWizard(QWizard):
         """
         return installer.InstallPlan(
             root=self.install_root,
-            autoscript_path=self.autoscript_path,
             repository=self.repository,
             bundle=self.bundle,
             token=self.token,
@@ -543,9 +610,7 @@ class InstallerWizard(QWizard):
         Returns:
             A task suitable for `TaskWorker`.
         """
-        action = self.action
-
-        if action == ACTION_UNINSTALL:
+        if self.action == ACTION_UNINSTALL:
             manifest = self.existing
 
             def uninstall_task(
@@ -557,32 +622,16 @@ class InstallerWizard(QWizard):
 
             return uninstall_task
 
-        if action == ACTION_RELINK:
-            root = self.install_root
-            autoscript = self.autoscript_path
-
-            def relink_task(report: ProgressReporter, _cancel: threading.Event) -> str:
-                report("Verifying the Autoscript installation", 30)
-                validate_import(paths.venv_python(root), autoscript)
-                report("Writing configuration", 70)
-                write_config(paths.config_file(root), autoscript)
-                manifest = installer.existing_installation(root)
-                if manifest is not None:
-                    manifest.autoscript_path = str(autoscript)
-                    manifest.save(paths.manifest_file(root))
-                report("Done", 100)
-                return f"Autoscript is now linked from\n{autoscript}"
-
-            return relink_task
-
         plan = self.build_plan()
-        reinstall = action in {ACTION_UPDATE, ACTION_REPAIR}
+        reinstall = self.action in {ACTION_UPDATE, ACTION_REPAIR}
 
         def install_task(report: ProgressReporter, cancel: threading.Event) -> str:
-            manifest = installer.install(plan, report, cancel, reinstall)
+            result = installer.install(plan, report, cancel, reinstall)
+            # read in the GUI thread after `succeeded`, which is emitted later
+            self.link_problems = result.link_problems
             return (
-                f"{paths.APP_NAME} {manifest.app_version} was installed in\n"
-                f"{manifest.root}"
+                f"{paths.APP_NAME} {result.manifest.app_version} was installed in\n"
+                f"{result.manifest.root}"
             )
 
         return install_task
@@ -602,12 +651,14 @@ class InstallerWizard(QWizard):
         subprocess.Popen([str(executable)], close_fds=True)
 
     def reject(self) -> None:
-        """Cancel a running operation before closing."""
+        """Cancel running work before closing."""
         self.progress_page.cancel_worker()
+        self.libraries_page.shutdown()
         super().reject()
 
     def accept(self) -> None:
         """Optionally start the application when finishing."""
+        self.libraries_page.shutdown()
         if self.finish_page.launch_check.isChecked():
             try:
                 self.launch_application()

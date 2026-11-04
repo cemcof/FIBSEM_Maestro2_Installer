@@ -12,7 +12,3 @@ class InstallError(Exception):
 
 class InstallCancelled(Exception):
     """Raised when the user aborts an installation in progress."""
-
-
-class AutoscriptError(InstallError):
-    """Raised when the supplied Autoscript path cannot be imported."""

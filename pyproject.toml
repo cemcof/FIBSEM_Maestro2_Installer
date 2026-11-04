@@ -6,12 +6,12 @@ build-backend = "setuptools.build_meta"
 name = "fibsem-maestro-installer"
 description = "Installer for FIBSEM Maestro"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.14"
 dependencies = [
+    "packaging>=26.3",
     "tomli-w>=1.2.0",
-    "pyqt6>=6.4.2",
-    "pyqt6-qt6<6.5",
-    "pywin32>=306; sys_platform == 'win32'",
+    "pyqt6>=6.12.0",
+    "pywin32>=312; sys_platform == 'win32'",
     "qdarkstyle>=3.2.3",
 ]
 dynamic = ["version"]
@@ -24,12 +24,12 @@ package-dir = {"" = "src"}
 
 [dependency-groups]
 dev = [
-    "pillow>=12.3.0",
-    "pre-commit>=4.6.1",
-    "pyinstaller>=6.21.0",
-    "pytest>=9.1.1",
-    "ruff>=0.16.1",
-    "ty>=0.0.65",
+    "pillow>=13.0.0",
+    "pre-commit>=4.7.0",
+    "pyinstaller>=6.22.3",
+    "pytest>=9.2.0",
+    "ruff>=0.17.3",
+    "ty>=0.0.96",
 ]
 
 [tool.ruff.lint]

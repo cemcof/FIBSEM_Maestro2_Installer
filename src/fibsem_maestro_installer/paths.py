@@ -13,7 +13,8 @@ APP_NAME = "FIBSEM Maestro"
 APP_SLUG = "fibsem-maestro"
 DESKTOP_ID = "cz.cemcof.FibsemMaestro"
 DISTRIBUTION = "fibsem-maestro"
-PYTHON_VERSION = "3.11"
+PYTHON_VERSION = "3.14.7"
+"""Interpreter provisioned for the application; keep in sync with `build-bundle.yml`."""
 
 
 def is_windows() -> bool:

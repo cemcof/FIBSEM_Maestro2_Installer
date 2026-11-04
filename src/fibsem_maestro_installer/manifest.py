@@ -8,12 +8,12 @@ from __future__ import annotations
 import json
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from pathlib import Path
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 @dataclass
@@ -25,7 +25,7 @@ class Manifest:
         app_version: Version of the installed application.
         root: Installation root directory.
         python_version: Interpreter version used for the environment.
-        autoscript_path: Directory of the linked Autoscript installation.
+        libraries: Folder of each linked manufacturer library, by library key.
         launchers: Every shortcut or desktop entry created by the installer.
         installed_at: UTC timestamp in ISO 8601 format.
         offline_install: Whether the installation came from an offline bundle.
@@ -35,7 +35,7 @@ class Manifest:
     app_version: str
     root: str
     python_version: str
-    autoscript_path: str
+    libraries: dict[str, str] = field(default_factory=dict)
     launchers: list[str] = field(default_factory=list)
     installed_at: str = ""
     offline_install: bool = False
@@ -56,12 +56,41 @@ class Manifest:
         path.write_text(json.dumps(asdict(self), indent=2) + "\n", encoding="utf-8")
 
 
+def _migrate(data: dict[str, Any]) -> dict[str, Any] | None:
+    """
+    Bring a manifest written by an older installer to the current schema.
+
+    Schema 1 linked Autoscript unconditionally (`autoscript_path`).
+
+    Args:
+        data: The manifest as read from disk.
+
+    Returns:
+        The data in the current schema, or None if the schema is unknown.
+    """
+    schema = data.get("schema")
+    if schema == SCHEMA_VERSION:
+        return data
+    if schema == 1:
+        migrated = {k: v for k, v in data.items() if k != "autoscript_path"}
+        autoscript = data.get("autoscript_path")
+        migrated["libraries"] = (
+            {"autoscript": autoscript}
+            if isinstance(autoscript, str) and autoscript
+            else {}
+        )
+        migrated["schema"] = SCHEMA_VERSION
+        return migrated
+    return None
+
+
 def load_manifest(path: Path) -> Manifest | None:
     """
     Read a manifest from disk.
 
-    A malformed or future-schema manifest is treated as absent rather than
-    raising, so that a damaged installation can still be repaired.
+    A manifest of an older schema is migrated. A malformed or future-schema
+    manifest is treated as absent rather than raising, so that a damaged
+    installation can still be repaired.
 
     Args:
         path: Manifest file to read.
@@ -74,10 +103,10 @@ def load_manifest(path: Path) -> Manifest | None:
 
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
+    except OSError, json.JSONDecodeError:
         return None
 
-    if not isinstance(data, dict) or data.get("schema") != SCHEMA_VERSION:
+    if not isinstance(data, dict) or (data := _migrate(data)) is None:
         return None
 
     known = Manifest.__dataclass_fields__.keys()
